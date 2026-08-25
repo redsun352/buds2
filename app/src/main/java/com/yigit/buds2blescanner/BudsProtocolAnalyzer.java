@@ -5,18 +5,14 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Passive analyzer for Samsung Galaxy Buds SPP/RFCOMM frames.
+ * Passive Samsung Galaxy Buds SPP/RFCOMM analyzer.
  *
- * Buds+ / Buds2-family SPP frames use:
- *   FD | 16-bit little-endian header | message-id | payload | CRC16 | DD
+ * Reference protocol (GalaxyBudsClient):
+ *   FD | uint16 LE header | msgId | payload | CRC16 | DD
  *
- * The 16-bit header contains the message size in its low 10 bits. That size
- * is message-id + payload + CRC (3 bytes overhead inside the size field).
- * Bit 12 is the response flag and bit 13 is the fragment flag.
- *
- * Therefore a complete frame is: header-size + 4 bytes
- * (FD + 2-byte header + DD). The payload may contain FD/DD; delimiters alone
- * must never be used to split a stream.
+ * Size in the low 10 bits of the header is MsgId + payload + CRC.
+ * Therefore total frame length is declaredSize + 4.
+ * Payload bytes are never used as delimiters; FD/DD may occur inside payload.
  */
 public final class BudsProtocolAnalyzer {
     public static final class Frame {
@@ -34,9 +30,12 @@ public final class BudsProtocolAnalyzer {
         public final String checksumNote;
         public final String shapeKey;
         public final String diffNote;
+        public final String messageName;
+        public final String decodedInfo;
 
         Frame(byte[] bytes, int header, int messageId, boolean response, boolean fragment,
-              int[] variableOffsets, String checksumNote, String shapeKey, String diffNote) {
+              int[] variableOffsets, String checksumNote, String shapeKey,
+              String diffNote, String messageName, String decodedInfo) {
             this.bytes = bytes;
             this.length = bytes.length;
             this.start = bytes.length == 0 ? -1 : bytes[0] & 0xFF;
@@ -51,6 +50,8 @@ public final class BudsProtocolAnalyzer {
             this.checksumNote = checksumNote;
             this.shapeKey = shapeKey;
             this.diffNote = diffNote;
+            this.messageName = messageName;
+            this.decodedInfo = decodedInfo;
         }
 
         public String summary() {
@@ -59,6 +60,7 @@ public final class BudsProtocolAnalyzer {
              .append(" header=").append(String.format(Locale.US, "%04X", header))
              .append(" size=").append(declaredSize)
              .append(" msgId=").append(String.format(Locale.US, "%02X", messageId))
+             .append(" (").append(messageName).append(")")
              .append(" payload=").append(payloadLength)
              .append(" response=").append(response)
              .append(" fragment=").append(fragment)
@@ -67,6 +69,7 @@ public final class BudsProtocolAnalyzer {
              .append(" shape=").append(shapeKey)
              .append(" checksum=").append(checksumNote);
             if (diffNote != null && !diffNote.isEmpty()) s.append(" diff=").append(diffNote);
+            if (decodedInfo != null && !decodedInfo.isEmpty()) s.append(" decode=").append(decodedInfo);
             return s.toString();
         }
     }
@@ -81,7 +84,7 @@ public final class BudsProtocolAnalyzer {
         frameNumber = 0;
     }
 
-    /** Feed arbitrary RFCOMM read chunks; handles partial and multiple frames. */
+    /** Feed arbitrary RFCOMM read chunks; supports partial and multiple frames. */
     public synchronized List<Frame> feed(byte[] chunk) {
         List<Frame> out = new ArrayList<>();
         if (chunk == null || chunk.length == 0) return out;
@@ -94,26 +97,20 @@ public final class BudsProtocolAnalyzer {
                 break;
             }
             if (start > 0) pending.subList(0, start).clear();
-
-            // FD + two header bytes are required.
             if (pending.size() < 3) break;
 
-            // Header is little-endian, exactly as the reference implementation.
             int header = (pending.get(1) & 0xFF) | ((pending.get(2) & 0xFF) << 8);
             int declaredSize = header & 0x03FF;
             int expectedLength = declaredSize + 4;
 
-            // A valid non-fragmented SPP message has at least ID + CRC (3 bytes).
             if (declaredSize < 3 || expectedLength > 4096) {
                 pending.remove(0);
                 continue;
             }
             if (pending.size() < expectedLength) break;
 
+            // Header-derived boundary is authoritative. DD inside payload is legal.
             if ((pending.get(expectedLength - 1) & 0xFF) != 0xDD) {
-                // Header-derived boundary is authoritative; if it does not end
-                // in DD, resynchronize at the next FD rather than trusting a DD
-                // that may be inside the payload.
                 pending.remove(0);
                 continue;
             }
@@ -125,11 +122,13 @@ public final class BudsProtocolAnalyzer {
             int messageId = frame[3] & 0xFF;
             boolean response = (header & 0x1000) != 0;
             boolean fragment = (header & 0x2000) != 0;
-            String shape = shapeKey(frame, header, messageId);
+            String shape = shapeKey(frame, messageId);
             String diff = diffAgainstPreviousSameShape(frame, shape);
             int[] vars = variableOffsetsAgainstPreviousSameShape(frame, shape);
+            String name = messageName(messageId);
+            String decoded = decodeKnownMessage(messageId, frame);
             Frame f = new Frame(frame, header, messageId, response, fragment,
-                    vars, checksumAnalysis(frame), shape, diff);
+                    vars, checksumAnalysis(frame), shape, diff, name, decoded);
             history.add(f);
             frameNumber++;
             out.add(f);
@@ -140,12 +139,15 @@ public final class BudsProtocolAnalyzer {
     public synchronized int frameCount() { return frameNumber; }
 
     private int indexOf(int value) {
-        for (int i = 0; i < pending.size(); i++) if ((pending.get(i) & 0xFF) == value) return i;
+        for (int i = 0; i < pending.size(); i++) {
+            if ((pending.get(i) & 0xFF) == value) return i;
+        }
         return -1;
     }
 
-    private String shapeKey(byte[] a, int header, int messageId) {
-        return String.format(Locale.US, "FD-H%04X-ID%02X-L%d", header, messageId, a.length);
+    /** Group repeated messages by ID and payload size, not by volatile header flags. */
+    private String shapeKey(byte[] a, int messageId) {
+        return String.format(Locale.US, "FD-ID%02X-PAYLOAD%d", messageId, Math.max(0, a.length - 7));
     }
 
     private Frame previousSameShape(String shape) {
@@ -173,41 +175,35 @@ public final class BudsProtocolAnalyzer {
         StringBuilder s = new StringBuilder();
         for (int i = 0; i < a.length; i++) {
             if (a[i] != p.bytes[i]) {
-                if (count == 0) s.append("offsets=");
-                else s.append(',');
+                if (count == 0) s.append("offsets="); else s.append(',');
                 s.append(i).append(':')
                  .append(String.format(Locale.US, "%02X", p.bytes[i] & 0xFF))
                  .append('>')
                  .append(String.format(Locale.US, "%02X", a[i] & 0xFF));
-                count++;
-                if (count >= 32) { s.append(",..."); break; }
+                if (++count >= 32) { s.append(",..."); break; }
             }
         }
         return count == 0 ? "identical" : s.toString();
     }
 
-    /** Verify the exact CRC16-CCITT variant used by GalaxyBudsClient. */
+    /** Exact CRC-16-CCITT variant used by GalaxyBudsClient. */
     private String checksumAnalysis(byte[] a) {
         if (a.length < 8) return "too_short";
         int crcOffset = a.length - 3;
         int receivedLo = a[crcOffset] & 0xFF;
         int receivedHi = a[crcOffset + 1] & 0xFF;
         int receivedLE = receivedLo | (receivedHi << 8);
-
-        // CRC is calculated over message ID + payload, excluding FD/header/CRC/DD.
         int calculated = crc16Ccitt(a, 3, crcOffset - 3);
-        if (receivedLE == calculated) return String.format(Locale.US, "CRC16_CCITT_LE_MATCH=0x%04X", calculated);
-
-        // Also test the swapped representation seen in some diagnostic dumps.
+        if (receivedLE == calculated) {
+            return String.format(Locale.US, "CRC16_CCITT_LE_OK=0x%04X", calculated);
+        }
         int receivedBE = (receivedLo << 8) | receivedHi;
-        if (receivedBE == calculated) return String.format(Locale.US, "CRC16_CCITT_BE_MATCH=0x%04X", calculated);
-
-        return String.format(Locale.US, "CRC_MISMATCH recvLE=0x%04X calc=0x%04X", receivedLE, calculated);
+        if (receivedBE == calculated) {
+            return String.format(Locale.US, "CRC16_CCITT_BE_OK=0x%04X", calculated);
+        }
+        return String.format(Locale.US, "CRC_FAIL recvLE=0x%04X calc=0x%04X", receivedLE, calculated);
     }
 
-    // Same table/polynomial as GalaxyBudsClient Crc16.crc16_ccitt: poly 0x1021,
-    // initial 0, non-reflected. The Buds implementation writes the resulting
-    // short as little-endian on Android/Windows little-endian targets.
     private static int crc16Ccitt(byte[] a, int off, int len) {
         int crc = 0;
         for (int i = off; i < off + len; i++) {
@@ -220,4 +216,97 @@ public final class BudsProtocolAnalyzer {
         }
         return crc & 0xFFFF;
     }
+
+    private static String messageName(int id) {
+        switch (id) {
+            case 0x41: return "METERING_REPORT";
+            case 0x51: return "RESP";
+            case 0x60: return "STATUS_UPDATED";
+            case 0x61: return "EXTENDED_STATUS_UPDATED";
+            case 0x62: return "CONNECTION_UPDATED";
+            case 0x63: return "VERSION_INFO";
+            case 0x64: return "SET_HOT_COMMAND";
+            case 0x6C: return "PAUSE_MEDIA_WHEN_ONE_BUD_REMOVED";
+            case 0x6F: return "SET_ANC_WITH_ONE_EARBUD";
+            case 0x70: return "MAIN_CHANGE";
+            case 0x71: return "PROFILE_CONTROL";
+            case 0x72: return "PAIRING_MODE";
+            case 0x77: return "MULTIPOINT_INFO";
+            case 0x78: return "NOISE_CONTROLS_UPDATE";
+            case 0x79: return "NOISE_CONTROLS";
+            case 0x7B: return "SET_DETECT_CONVERSATIONS";
+            case 0x7C: return "SET_DETECT_CONVERSATIONS_DURATION";
+            case 0x7D: return "SET_SPATIAL_AUDIO";
+            case 0x80: return "SET_AMBIENT_MODE";
+            case 0x81: return "AMBIENT_MODE_UPDATED";
+            case 0x82: return "CUSTOMIZE_AMBIENT_SOUND";
+            case 0x83: return "NOISE_REDUCTION_LEVEL";
+            case 0x84: return "AMBIENT_VOLUME";
+            case 0x85: return "ADJUST_SOUND_SYNC";
+            case 0x86: return "EQUALIZER";
+            case 0x87: return "GAME_MODE";
+            case 0x88: return "MANAGER_INFO";
+            case 0x8B: return "SET_SIDETONE";
+            case 0x90: return "LOCK_TOUCHPAD";
+            case 0x91: return "TOUCH_UPDATED";
+            case 0x92: return "SET_TOUCHPAD_OPTION";
+            case 0x93: return "SET_TOUCHPAD_OTHER_OPTION";
+            case 0x94: return "BATTERY_TYPE";
+            case 0x9F: return "PASS_THROUGH";
+            case 0xA0: return "FIND_MY_EARBUDS_START";
+            case 0xA1: return "FIND_MY_EARBUDS_STOP";
+            case 0xA2: return "MUTE_EARBUD";
+            case 0xA3: return "MUTE_EARBUD_STATUS_UPDATED";
+            case 0xA7: return "UPDATE_TIME";
+            case 0xAB: return "SELF_TEST";
+            case 0xB0: return "FOTA_V1_SESSION";
+            case 0xB1: return "FOTA_V1_CONTROL";
+            case 0xB2: return "FOTA_V1_DOWNLOAD_DATA";
+            case 0xB3: return "FOTA_V1_UPDATED";
+            case 0xF1: return "DEBUG_ERROR_CODE";
+            case 0xF2: return "DEBUG_EVENT";
+            default: return String.format(Locale.US, "UNKNOWN_0x%02X", id);
+        }
+    }
+
+    /** Decode only documented stable fields; unknown bytes remain raw in the capture. */
+    private static String decodeKnownMessage(int id, byte[] frame) {
+        int payloadStart = 4;
+        int payloadEnd = frame.length - 3;
+        if (payloadEnd <= payloadStart) return "";
+
+        switch (id) {
+            case 0x61: {
+                int n = payloadEnd - payloadStart;
+                if (n < 12) return "EXT_STATUS payload=" + n;
+                return String.format(Locale.US,
+                        "MR=%d ear=%d batL=%d%% batR=%d%% coupled=%d main=%d wearing=%d ambient=%d voiceFocus=%d ambientVolRaw=%d eq=%d eqType=%d",
+                        u8(frame, payloadStart), u8(frame, payloadStart + 1),
+                        u8(frame, payloadStart + 2), u8(frame, payloadStart + 3),
+                        u8(frame, payloadStart + 4), u8(frame, payloadStart + 5),
+                        u8(frame, payloadStart + 6), u8(frame, payloadStart + 7),
+                        u8(frame, payloadStart + 8), u8(frame, payloadStart + 9),
+                        u8(frame, payloadStart + 10), u8(frame, payloadStart + 11));
+            }
+            case 0x60: {
+                int n = payloadEnd - payloadStart;
+                if (n < 6) return "STATUS payload=" + n;
+                return String.format(Locale.US,
+                        "ear=%d batL=%d%% batR=%d%% coupled=%d main=%d wearing=%d",
+                        u8(frame, payloadStart), u8(frame, payloadStart + 1),
+                        u8(frame, payloadStart + 2), u8(frame, payloadStart + 3),
+                        u8(frame, payloadStart + 4), u8(frame, payloadStart + 5));
+            }
+            case 0x51:
+                if (payloadEnd - payloadStart >= 2) {
+                    return "action=" + hex(frame[payloadStart]) + " result=" + u8(frame, payloadStart + 1);
+                }
+                return "RESP";
+            default:
+                return "";
+        }
+    }
+
+    private static int u8(byte[] a, int i) { return a[i] & 0xFF; }
+    private static String hex(byte b) { return String.format(Locale.US, "%02X", b & 0xFF); }
 }
