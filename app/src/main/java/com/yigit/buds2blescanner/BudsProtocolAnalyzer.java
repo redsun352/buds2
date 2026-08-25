@@ -1,7 +1,6 @@
 package com.yigit.buds2blescanner;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -44,8 +43,12 @@ public final class BudsProtocolAnalyzer {
     }
 
     private final ArrayList<Byte> pending = new ArrayList<>();
-    private final ArrayList<byte[]> history = new ArrayList<>();
     private int frameNumber;
+
+    public synchronized void reset() {
+        pending.clear();
+        frameNumber = 0;
+    }
 
     /** Feed an arbitrary RFCOMM read chunk. A single read may contain partial or multiple frames. */
     public synchronized List<Frame> feed(byte[] chunk) {
@@ -61,7 +64,6 @@ public final class BudsProtocolAnalyzer {
             byte[] frame = new byte[end + 1];
             for (int i = 0; i <= end; i++) frame[i] = pending.get(i);
             pending.subList(0, end + 1).clear();
-            history.add(frame);
             Frame f = new Frame(frame, new int[0], checksumAnalysis(frame));
             frameNumber++;
             out.add(f);
