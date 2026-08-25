@@ -6,7 +6,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
-    <application android:allowBackup="false" android:label="Galaxy Buds2 Manager" android:theme="@style/AppTheme">
+    <application android:name=".BudsApplication" android:allowBackup="false" android:label="Galaxy Buds2 Manager" android:theme="@style/AppTheme">
         <activity android:name=".BudsManagerActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
