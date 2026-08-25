@@ -6,9 +6,13 @@ import java.util.Locale;
 
 /**
  * Passive analyzer for the Buds2 RFCOMM stream observed in captures.
- * It does not transmit anything. It treats FD...DD as a candidate envelope,
- * keeps a streaming buffer, detects repeated message shapes, compares frames
- * byte-by-byte, and tests several common checksum candidates.
+ *
+ * Observed Buds2 frames have the form:
+ *   FD [length] ... [checksum-hi] [checksum-lo] DD
+ *
+ * The second byte is the frame length minus four. Therefore the complete
+ * frame size is (unsigned byte 1) + 4. DD may legitimately occur inside the
+ * payload, so a raw "first DD" delimiter is not safe.
  */
 public final class BudsProtocolAnalyzer {
     public static final class Frame {
@@ -64,19 +68,40 @@ public final class BudsProtocolAnalyzer {
         List<Frame> out = new ArrayList<>();
         if (chunk == null || chunk.length == 0) return out;
         for (byte b : chunk) pending.add(b);
+
         while (true) {
             int start = indexOf(0xFD);
-            if (start < 0) { pending.clear(); break; }
+            if (start < 0) {
+                pending.clear();
+                break;
+            }
             if (start > 0) pending.subList(0, start).clear();
 
-            // Do not assume the first FD after the start is a new frame. The
-            // candidate envelope is terminated by DD; any embedded FD is kept.
-            int end = indexOfAfter(0xDD, 1);
-            if (end < 0) break;
+            // We need at least FD + length byte before we can determine the
+            // complete frame size. Do NOT search for the first DD because DD
+            // can occur as ordinary payload data (seen at offset 7 in captures).
+            if (pending.size() < 2) break;
 
-            byte[] frame = new byte[end + 1];
-            for (int i = 0; i <= end; i++) frame[i] = pending.get(i);
-            pending.subList(0, end + 1).clear();
+            int declaredMinusFour = pending.get(1) & 0xFF;
+            int expectedLength = declaredMinusFour + 4;
+
+            // Protect the streaming parser from corrupt/noise length bytes.
+            if (expectedLength < 4 || expectedLength > 4096) {
+                pending.remove(0);
+                continue;
+            }
+            if (pending.size() < expectedLength) break;
+
+            // A complete frame is available. The final byte should be DD.
+            // If it is not, discard only the current FD and resynchronize.
+            if ((pending.get(expectedLength - 1) & 0xFF) != 0xDD) {
+                pending.remove(0);
+                continue;
+            }
+
+            byte[] frame = new byte[expectedLength];
+            for (int i = 0; i < expectedLength; i++) frame[i] = pending.get(i);
+            pending.subList(0, expectedLength).clear();
 
             String shape = shapeKey(frame);
             String diff = diffAgainstPreviousSameShape(frame, shape);
@@ -96,12 +121,7 @@ public final class BudsProtocolAnalyzer {
         return -1;
     }
 
-    private int indexOfAfter(int value, int from) {
-        for (int i = from; i < pending.size(); i++) if ((pending.get(i) & 0xFF) == value) return i;
-        return -1;
-    }
-
-    /** Shape ignores bytes that commonly vary while retaining framing and length. */
+    /** Shape keeps the observed framing/type fields and the actual frame length. */
     private String shapeKey(byte[] a) {
         if (a.length == 0) return "EMPTY";
         StringBuilder s = new StringBuilder();
@@ -150,22 +170,28 @@ public final class BudsProtocolAnalyzer {
         return count == 0 ? "identical" : s.toString();
     }
 
+    /**
+     * The final byte is the DD terminator. The two bytes immediately before
+     * it are the checksum candidate. Checksum calculations therefore exclude
+     * those three trailing bytes.
+     */
     private String checksumAnalysis(byte[] a) {
-        if (a.length < 4) return "too_short";
-        int last2be = ((a[a.length - 2] & 0xFF) << 8) | (a[a.length - 1] & 0xFF);
-        int last2le = ((a[a.length - 1] & 0xFF) << 8) | (a[a.length - 2] & 0xFF);
+        if (a.length < 5) return "too_short";
+        int checksumOffset = a.length - 3;
+        int last2be = ((a[checksumOffset] & 0xFF) << 8) | (a[checksumOffset + 1] & 0xFF);
+        int last2le = ((a[checksumOffset + 1] & 0xFF) << 8) | (a[checksumOffset] & 0xFF);
         int sum8 = 0;
         int xor8 = 0;
         int sum16 = 0;
-        for (int i = 0; i < a.length - 2; i++) {
+        for (int i = 0; i < checksumOffset; i++) {
             int b = a[i] & 0xFF;
             sum8 = (sum8 + b) & 0xFF;
             xor8 ^= b;
             sum16 = (sum16 + b) & 0xFFFF;
         }
-        int crcCcittFFFF = crc16Ccitt(a, 0, a.length - 2, 0xFFFF);
-        int crcCcitt0000 = crc16Ccitt(a, 0, a.length - 2, 0x0000);
-        int crcX25 = crc16X25(a, 0, a.length - 2);
+        int crcCcittFFFF = crc16Ccitt(a, 0, checksumOffset, 0xFFFF);
+        int crcCcitt0000 = crc16Ccitt(a, 0, checksumOffset, 0x0000);
+        int crcX25 = crc16X25(a, 0, checksumOffset);
         if (last2be == crcCcittFFFF || last2le == crcCcittFFFF) return "CRC16_CCITT_FFFF_MATCH";
         if (last2be == crcCcitt0000 || last2le == crcCcitt0000) return "CRC16_CCITT_0000_MATCH";
         if (last2be == crcX25 || last2le == crcX25) return "CRC16_X25_MATCH";
