@@ -5,14 +5,18 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Passive analyzer for the Buds2 RFCOMM stream observed in captures.
+ * Passive analyzer for Samsung Galaxy Buds SPP/RFCOMM frames.
  *
- * Observed Buds2 frames have the form:
- *   FD [length] ... [checksum-hi] [checksum-lo] DD
+ * Buds+ / Buds2-family SPP frames use:
+ *   FD | 16-bit little-endian header | message-id | payload | CRC16 | DD
  *
- * The second byte is the frame length minus four. Therefore the complete
- * frame size is (unsigned byte 1) + 4. DD may legitimately occur inside the
- * payload, so a raw "first DD" delimiter is not safe.
+ * The 16-bit header contains the message size in its low 10 bits. That size
+ * is message-id + payload + CRC (3 bytes overhead inside the size field).
+ * Bit 12 is the response flag and bit 13 is the fragment flag.
+ *
+ * Therefore a complete frame is: header-size + 4 bytes
+ * (FD + 2-byte header + DD). The payload may contain FD/DD; delimiters alone
+ * must never be used to split a stream.
  */
 public final class BudsProtocolAnalyzer {
     public static final class Frame {
@@ -20,16 +24,29 @@ public final class BudsProtocolAnalyzer {
         public final int length;
         public final int start;
         public final int end;
+        public final int header;
+        public final int declaredSize;
+        public final int messageId;
+        public final boolean response;
+        public final boolean fragment;
+        public final int payloadLength;
         public final int[] variableOffsets;
         public final String checksumNote;
         public final String shapeKey;
         public final String diffNote;
 
-        Frame(byte[] bytes, int[] variableOffsets, String checksumNote, String shapeKey, String diffNote) {
+        Frame(byte[] bytes, int header, int messageId, boolean response, boolean fragment,
+              int[] variableOffsets, String checksumNote, String shapeKey, String diffNote) {
             this.bytes = bytes;
             this.length = bytes.length;
             this.start = bytes.length == 0 ? -1 : bytes[0] & 0xFF;
             this.end = bytes.length == 0 ? -1 : bytes[bytes.length - 1] & 0xFF;
+            this.header = header;
+            this.declaredSize = header & 0x03FF;
+            this.messageId = messageId;
+            this.response = response;
+            this.fragment = fragment;
+            this.payloadLength = Math.max(0, declaredSize - 3);
             this.variableOffsets = variableOffsets;
             this.checksumNote = checksumNote;
             this.shapeKey = shapeKey;
@@ -39,14 +56,15 @@ public final class BudsProtocolAnalyzer {
         public String summary() {
             StringBuilder s = new StringBuilder();
             s.append("FRAME len=").append(length)
+             .append(" header=").append(String.format(Locale.US, "%04X", header))
+             .append(" size=").append(declaredSize)
+             .append(" msgId=").append(String.format(Locale.US, "%02X", messageId))
+             .append(" payload=").append(payloadLength)
+             .append(" response=").append(response)
+             .append(" fragment=").append(fragment)
              .append(" start=").append(String.format(Locale.US, "%02X", start))
-             .append(" end=").append(String.format(Locale.US, "%02X", end));
-            if (length > 2) {
-                s.append(" header=");
-                int n = Math.min(8, length);
-                for (int i = 0; i < n; i++) s.append(String.format(Locale.US, "%02X ", bytes[i] & 0xFF));
-            }
-            s.append(" shape=").append(shapeKey)
+             .append(" end=").append(String.format(Locale.US, "%02X", end))
+             .append(" shape=").append(shapeKey)
              .append(" checksum=").append(checksumNote);
             if (diffNote != null && !diffNote.isEmpty()) s.append(" diff=").append(diffNote);
             return s.toString();
@@ -63,7 +81,7 @@ public final class BudsProtocolAnalyzer {
         frameNumber = 0;
     }
 
-    /** Feed an arbitrary RFCOMM read chunk. A single read may contain partial or multiple frames. */
+    /** Feed arbitrary RFCOMM read chunks; handles partial and multiple frames. */
     public synchronized List<Frame> feed(byte[] chunk) {
         List<Frame> out = new ArrayList<>();
         if (chunk == null || chunk.length == 0) return out;
@@ -77,24 +95,25 @@ public final class BudsProtocolAnalyzer {
             }
             if (start > 0) pending.subList(0, start).clear();
 
-            // We need at least FD + length byte before we can determine the
-            // complete frame size. Do NOT search for the first DD because DD
-            // can occur as ordinary payload data (seen at offset 7 in captures).
-            if (pending.size() < 2) break;
+            // FD + two header bytes are required.
+            if (pending.size() < 3) break;
 
-            int declaredMinusFour = pending.get(1) & 0xFF;
-            int expectedLength = declaredMinusFour + 4;
+            // Header is little-endian, exactly as the reference implementation.
+            int header = (pending.get(1) & 0xFF) | ((pending.get(2) & 0xFF) << 8);
+            int declaredSize = header & 0x03FF;
+            int expectedLength = declaredSize + 4;
 
-            // Protect the streaming parser from corrupt/noise length bytes.
-            if (expectedLength < 4 || expectedLength > 4096) {
+            // A valid non-fragmented SPP message has at least ID + CRC (3 bytes).
+            if (declaredSize < 3 || expectedLength > 4096) {
                 pending.remove(0);
                 continue;
             }
             if (pending.size() < expectedLength) break;
 
-            // A complete frame is available. The final byte should be DD.
-            // If it is not, discard only the current FD and resynchronize.
             if ((pending.get(expectedLength - 1) & 0xFF) != 0xDD) {
+                // Header-derived boundary is authoritative; if it does not end
+                // in DD, resynchronize at the next FD rather than trusting a DD
+                // that may be inside the payload.
                 pending.remove(0);
                 continue;
             }
@@ -103,10 +122,14 @@ public final class BudsProtocolAnalyzer {
             for (int i = 0; i < expectedLength; i++) frame[i] = pending.get(i);
             pending.subList(0, expectedLength).clear();
 
-            String shape = shapeKey(frame);
+            int messageId = frame[3] & 0xFF;
+            boolean response = (header & 0x1000) != 0;
+            boolean fragment = (header & 0x2000) != 0;
+            String shape = shapeKey(frame, header, messageId);
             String diff = diffAgainstPreviousSameShape(frame, shape);
             int[] vars = variableOffsetsAgainstPreviousSameShape(frame, shape);
-            Frame f = new Frame(frame, vars, checksumAnalysis(frame), shape, diff);
+            Frame f = new Frame(frame, header, messageId, response, fragment,
+                    vars, checksumAnalysis(frame), shape, diff);
             history.add(f);
             frameNumber++;
             out.add(f);
@@ -121,15 +144,8 @@ public final class BudsProtocolAnalyzer {
         return -1;
     }
 
-    /** Shape keeps the observed framing/type fields and the actual frame length. */
-    private String shapeKey(byte[] a) {
-        if (a.length == 0) return "EMPTY";
-        StringBuilder s = new StringBuilder();
-        s.append(String.format(Locale.US, "%02X", a[0] & 0xFF));
-        if (a.length > 1) s.append('-').append(String.format(Locale.US, "%02X", a[1] & 0xFF));
-        if (a.length > 3) s.append('-').append(String.format(Locale.US, "%02X", a[3] & 0xFF));
-        s.append("-L").append(a.length);
-        return s.toString();
+    private String shapeKey(byte[] a, int header, int messageId) {
+        return String.format(Locale.US, "FD-H%04X-ID%02X-L%d", header, messageId, a.length);
     }
 
     private Frame previousSameShape(String shape) {
@@ -164,58 +180,44 @@ public final class BudsProtocolAnalyzer {
                  .append('>')
                  .append(String.format(Locale.US, "%02X", a[i] & 0xFF));
                 count++;
-                if (count >= 16) { s.append(",..."); break; }
+                if (count >= 32) { s.append(",..."); break; }
             }
         }
         return count == 0 ? "identical" : s.toString();
     }
 
-    /**
-     * The final byte is the DD terminator. The two bytes immediately before
-     * it are the checksum candidate. Checksum calculations therefore exclude
-     * those three trailing bytes.
-     */
+    /** Verify the exact CRC16-CCITT variant used by GalaxyBudsClient. */
     private String checksumAnalysis(byte[] a) {
-        if (a.length < 5) return "too_short";
-        int checksumOffset = a.length - 3;
-        int last2be = ((a[checksumOffset] & 0xFF) << 8) | (a[checksumOffset + 1] & 0xFF);
-        int last2le = ((a[checksumOffset + 1] & 0xFF) << 8) | (a[checksumOffset] & 0xFF);
-        int sum8 = 0;
-        int xor8 = 0;
-        int sum16 = 0;
-        for (int i = 0; i < checksumOffset; i++) {
-            int b = a[i] & 0xFF;
-            sum8 = (sum8 + b) & 0xFF;
-            xor8 ^= b;
-            sum16 = (sum16 + b) & 0xFFFF;
-        }
-        int crcCcittFFFF = crc16Ccitt(a, 0, checksumOffset, 0xFFFF);
-        int crcCcitt0000 = crc16Ccitt(a, 0, checksumOffset, 0x0000);
-        int crcX25 = crc16X25(a, 0, checksumOffset);
-        if (last2be == crcCcittFFFF || last2le == crcCcittFFFF) return "CRC16_CCITT_FFFF_MATCH";
-        if (last2be == crcCcitt0000 || last2le == crcCcitt0000) return "CRC16_CCITT_0000_MATCH";
-        if (last2be == crcX25 || last2le == crcX25) return "CRC16_X25_MATCH";
-        if ((last2be & 0xFF) == sum8 || (last2le & 0xFF) == sum8) return "8BIT_SUM_CANDIDATE";
-        if ((last2be & 0xFF) == xor8 || (last2le & 0xFF) == xor8) return "8BIT_XOR_CANDIDATE";
-        if (last2be == sum16 || last2le == sum16) return "SUM16_CANDIDATE";
-        return "unknown_last2=0x" + String.format(Locale.US, "%04X", last2be);
+        if (a.length < 8) return "too_short";
+        int crcOffset = a.length - 3;
+        int receivedLo = a[crcOffset] & 0xFF;
+        int receivedHi = a[crcOffset + 1] & 0xFF;
+        int receivedLE = receivedLo | (receivedHi << 8);
+
+        // CRC is calculated over message ID + payload, excluding FD/header/CRC/DD.
+        int calculated = crc16Ccitt(a, 3, crcOffset - 3);
+        if (receivedLE == calculated) return String.format(Locale.US, "CRC16_CCITT_LE_MATCH=0x%04X", calculated);
+
+        // Also test the swapped representation seen in some diagnostic dumps.
+        int receivedBE = (receivedLo << 8) | receivedHi;
+        if (receivedBE == calculated) return String.format(Locale.US, "CRC16_CCITT_BE_MATCH=0x%04X", calculated);
+
+        return String.format(Locale.US, "CRC_MISMATCH recvLE=0x%04X calc=0x%04X", receivedLE, calculated);
     }
 
-    private static int crc16Ccitt(byte[] a, int off, int len, int initial) {
-        int crc = initial & 0xFFFF;
+    // Same table/polynomial as GalaxyBudsClient Crc16.crc16_ccitt: poly 0x1021,
+    // initial 0, non-reflected. The Buds implementation writes the resulting
+    // short as little-endian on Android/Windows little-endian targets.
+    private static int crc16Ccitt(byte[] a, int off, int len) {
+        int crc = 0;
         for (int i = off; i < off + len; i++) {
             crc ^= (a[i] & 0xFF) << 8;
-            for (int j = 0; j < 8; j++) crc = ((crc & 0x8000) != 0) ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+            for (int j = 0; j < 8; j++) {
+                crc = ((crc & 0x8000) != 0)
+                        ? ((crc << 1) ^ 0x1021) & 0xFFFF
+                        : (crc << 1) & 0xFFFF;
+            }
         }
         return crc & 0xFFFF;
-    }
-
-    private static int crc16X25(byte[] a, int off, int len) {
-        int crc = 0xFFFF;
-        for (int i = off; i < off + len; i++) {
-            crc ^= a[i] & 0xFF;
-            for (int j = 0; j < 8; j++) crc = ((crc & 1) != 0) ? (crc >>> 1) ^ 0x8408 : (crc >>> 1);
-        }
-        return (~crc) & 0xFFFF;
     }
 }
