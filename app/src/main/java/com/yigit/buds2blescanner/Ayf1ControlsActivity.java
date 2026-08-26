@@ -2,10 +2,7 @@ package com.yigit.buds2blescanner;
 
 import android.Manifest;
 import android.app.Activity;
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothManager;
-import android.bluetooth.BluetoothSocket;
+import android.bluetooth.*;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.widget.*;
@@ -14,42 +11,91 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
-/** Functional AYF1 control surface using only documented/verified wire formats. */
+/**
+ * GalaxyBudsClient-compatible SM-R177/Buds2 control surface.
+ * Message IDs and payload shapes are based on the open-source GalaxyBudsClient
+ * protocol implementation; unverified firmware/debug commands remain disabled.
+ */
 public class Ayf1ControlsActivity extends Activity {
-    private static final UUID SPP=UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    private static final UUID SPP_NEW=UUID.fromString("2e73a4ad-332d-41fc-90e2-16bef06523f2");
+    private static final int NOISE_CONTROLS=120, TOUCH_HOLD_NOISE=121, DETECT_CONV=122, DETECT_CONV_DURATION=123;
+    private static final int SPATIAL_AUDIO=124, AMBIENT_MODE=128, CUSTOMIZE_AMBIENT=130, NOISE_LEVEL=131, AMBIENT_VOLUME=132;
+    private static final int EQUALIZER=134, MANAGER_INFO=136, ANC_ONE=111, LOCK_TOUCHPAD=144, TOUCHPAD_OPTION=146;
+    private static final int FIND_START=160, FIND_STOP=161, UPDATE_TIME=167, FIT=157, SELF_TEST=171;
+    private static final int SPATIAL_CONTROL=195;
     private BluetoothAdapter adapter; private BluetoothDevice selected; private BluetoothSocket socket;
     private OutputStream out; private volatile boolean connected;
     private final ExecutorService io=Executors.newSingleThreadExecutor();
-    private final StringBuilder log=new StringBuilder(); private TextView status,logView; private Spinner spinner;
-    private final ArrayList<BluetoothDevice> devices=new ArrayList<>();
+    private final StringBuilder log=new StringBuilder(); private TextView status,logView;
+    private Spinner spinner; private final ArrayList<BluetoothDevice> devices=new ArrayList<>();
 
-    @Override public void onCreate(Bundle b){super.onCreate(b);BluetoothManager bm=(BluetoothManager)getSystemService(BLUETOOTH_SERVICE);adapter=bm==null?null:bm.getAdapter();buildUi();if(android.os.Build.VERSION.SDK_INT>=31&&checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT},7001);else loadBonded();}
-    private int dp(int x){return(int)(x*getResources().getDisplayMetrics().density+.5f);} private TextView t(String s,int z){TextView v=new TextView(this);v.setText(s);v.setTextSize(z);v.setPadding(dp(8),dp(8),dp(8),dp(8));return v;} private Button b(String s){Button x=new Button(this);x.setText(s);x.setAllCaps(false);return x;}
+    @Override public void onCreate(Bundle b){
+        super.onCreate(b); BluetoothManager bm=(BluetoothManager)getSystemService(BLUETOOTH_SERVICE);
+        adapter=bm==null?null:bm.getAdapter(); buildUi();
+        if(android.os.Build.VERSION.SDK_INT>=31&&checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED)
+            requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT},7001); else loadBonded();
+    }
+    private int dp(int x){return(int)(x*getResources().getDisplayMetrics().density+.5f);}
+    private TextView t(String s,int z){TextView v=new TextView(this);v.setText(s);v.setTextSize(z);v.setPadding(dp(8),dp(8),dp(8),dp(8));return v;}
+    private Button b(String s){Button x=new Button(this);x.setText(s);x.setAllCaps(false);return x;}
+    private LinearLayout row(){LinearLayout r=new LinearLayout(this);r.setOrientation(LinearLayout.HORIZONTAL);return r;}
+    private void add(LinearLayout r,Button x){r.addView(x,new LinearLayout.LayoutParams(0,-2,1));}
 
     private void buildUi(){
-        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(10),dp(8),dp(10),dp(8));root.addView(t("AYF1 — LIVE CONTROLS",24));status=t("● Bağlı değil",13);root.addView(status);
-        LinearLayout pick=new LinearLayout(this);spinner=new Spinner(this);pick.addView(spinner,new LinearLayout.LayoutParams(0,-2,1));Button ref=b("YENİLE");ref.setOnClickListener(v->loadBonded());pick.addView(ref);root.addView(pick);
-        LinearLayout con=new LinearLayout(this);Button connect=b("BAĞLAN"),disconnect=b("KES");connect.setOnClickListener(v->connect());disconnect.setOnClickListener(v->disconnect());con.addView(connect,new LinearLayout.LayoutParams(0,-2,1));con.addView(disconnect,new LinearLayout.LayoutParams(0,-2,1));root.addView(con);
-        root.addView(t("AMBIENT",18));LinearLayout am=new LinearLayout(this);Button on=b("AÇ"),off=b("KAPAT");on.setOnClickListener(v->send(0x80,new byte[]{1}));off.setOnClickListener(v->send(0x80,new byte[]{0}));am.addView(on,new LinearLayout.LayoutParams(0,-2,1));am.addView(off,new LinearLayout.LayoutParams(0,-2,1));root.addView(am);
-        LinearLayout av=new LinearLayout(this);for(int i=1;i<=5;i++){final int n=i;Button x=b("VOL "+i);x.setOnClickListener(v->send(0x84,new byte[]{(byte)n}));av.addView(x,new LinearLayout.LayoutParams(0,-2,1));}root.addView(av);
-        root.addView(t("EQUALIZER",18));LinearLayout eq=new LinearLayout(this);String[] names={"Bass","Soft","Dynamic","Clear","Treble"};int[] ids={0,1,2,3,4};for(int i=0;i<names.length;i++){final int id=ids[i];Button x=b(names[i]);x.setOnClickListener(v->send(0x86,new byte[]{1,(byte)id}));eq.addView(x,new LinearLayout.LayoutParams(0,-2,1));}root.addView(eq);Button eqOff=b("EQ KAPAT");eqOff.setOnClickListener(v->send(0x86,new byte[]{0,0}));root.addView(eqOff);
-        root.addView(t("TOUCH",18));LinearLayout tl=new LinearLayout(this);Button lock=b("KİLİTLE"),unlock=b("AÇ");lock.setOnClickListener(v->send(0x90,new byte[]{1}));unlock.setOnClickListener(v->send(0x90,new byte[]{0}));tl.addView(lock,new LinearLayout.LayoutParams(0,-2,1));tl.addView(unlock,new LinearLayout.LayoutParams(0,-2,1));root.addView(tl);
-        LinearLayout to=new LinearLayout(this);String[] names2={"Asistan","Quick Ambient","Ses","Ambient"};int[] vals={0,1,2,3};for(int i=0;i<4;i++){final int n=vals[i];Button x=b(names2[i]);x.setOnClickListener(v->send(0x92,new byte[]{(byte)n,(byte)n}));to.addView(x,new LinearLayout.LayoutParams(0,-2,1));}root.addView(to);
-        root.addView(t("FIND MY EARBUDS",18));LinearLayout fm=new LinearLayout(this);Button fs=b("BAŞLAT"),fe=b("DURDUR");fs.setOnClickListener(v->send(0xA0,new byte[0]));fe.setOnClickListener(v->send(0xA1,new byte[0]));fm.addView(fs,new LinearLayout.LayoutParams(0,-2,1));fm.addView(fe,new LinearLayout.LayoutParams(0,-2,1));root.addView(fm);
-        root.addView(t("MANAGER / TIME",18));LinearLayout mi=new LinearLayout(this);Button info=b("MANAGER INFO"),time=b("SAAT");info.setOnClickListener(v->send(0x88,new byte[]{1,1,(byte)android.os.Build.VERSION.SDK_INT}));time.setOnClickListener(v->send(0xA7,timePayload()));mi.addView(info,new LinearLayout.LayoutParams(0,-2,1));mi.addView(time,new LinearLayout.LayoutParams(0,-2,1));root.addView(mi);
-        root.addView(t("ANC / ADVANCED",18));Button anc=b("ANC KONTROLÜ — CAPTURE GEREKİYOR");anc.setOnClickListener(v->toast("ANC/advanced payloadı bu R177 AYF1 capture setinde TX olarak doğrulanmadı; güvenli gönderim kilitli."));root.addView(anc);
-        root.addView(t("DIAGNOSTICS",18));root.addView(t("Self-test, fit-test, ANC leak ve mic loopback AYF1'de mevcut. TX payloadları doğrulanınca aynı panele bağlanacak.",12));
+        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(10),dp(8),dp(10),dp(8));
+        root.addView(t("BUDS2 / SM-R177 — GALAXYBUDSCLIENT MODE",23));
+        status=t("● Bağlı değil",13);root.addView(status);
+        LinearLayout pick=row();spinner=new Spinner(this);pick.addView(spinner,new LinearLayout.LayoutParams(0,-2,1));Button ref=b("YENİLE");ref.setOnClickListener(v->loadBonded());pick.addView(ref);root.addView(pick);
+        LinearLayout con=row();Button connect=b("BAĞLAN"),disconnect=b("KES");connect.setOnClickListener(v->connect());disconnect.setOnClickListener(v->disconnect());add(con,connect);add(con,disconnect);root.addView(con);
+
+        root.addView(t("NOISE CONTROL",18));
+        LinearLayout nc=row();Button off=b("OFF"),anc=b("ANC"),amb=b("AMBIENT");off.setOnClickListener(v->send(NOISE_CONTROLS,new byte[]{0}));anc.setOnClickListener(v->send(NOISE_CONTROLS,new byte[]{1}));amb.setOnClickListener(v->send(NOISE_CONTROLS,new byte[]{2}));add(nc,off);add(nc,anc);add(nc,amb);root.addView(nc);
+        LinearLayout nca=row();Button high=b("ANC HIGH"),low=b("ANC LOW"),one=b("1 EARBUD ANC");high.setOnClickListener(v->send(NOISE_LEVEL,new byte[]{1}));low.setOnClickListener(v->send(NOISE_LEVEL,new byte[]{0}));one.setOnClickListener(v->send(ANC_ONE,new byte[]{1}));add(nca,high);add(nca,low);add(nca,one);root.addView(nca);
+
+        root.addView(t("EQUALIZER",18));
+        LinearLayout eq=row();String[] names={"OFF","BASS","SOFT","DYNAMIC","CLEAR","TREBLE"};int[] vals={0,1,2,3,4,5};
+        for(int i=0;i<names.length;i++){final int p=vals[i];Button x=b(names[i]);x.setOnClickListener(v->send(EQUALIZER,new byte[]{(byte)p}));add(eq,x);}root.addView(eq);
+
+        root.addView(t("AMBIENT",18));
+        LinearLayout av=row();Button aOn=b("AÇ"),aOff=b("KAPAT");aOn.setOnClickListener(v->send(AMBIENT_MODE,new byte[]{1}));aOff.setOnClickListener(v->send(AMBIENT_MODE,new byte[]{0}));add(av,aOn);add(av,aOff);root.addView(av);
+        LinearLayout vol=row();for(int i=1;i<=5;i++){final int n=i;Button x=b("VOL "+i);x.setOnClickListener(v->send(AMBIENT_VOLUME,new byte[]{(byte)n}));add(vol,x);}root.addView(vol);
+
+        root.addView(t("TOUCH",18));
+        LinearLayout tl=row();Button lock=b("KİLİTLE"),unlock=b("AÇ");lock.setOnClickListener(v->send(LOCK_TOUCHPAD,new byte[]{1}));unlock.setOnClickListener(v->send(LOCK_TOUCHPAD,new byte[]{0}));add(tl,lock);add(tl,unlock);root.addView(tl);
+        LinearLayout th=row();Button cycle=b("ANC↔AMBIENT"),amboff=b("AMBIENT↔OFF"),anoff=b("ANC↔OFF");
+        cycle.setOnClickListener(v->send(TOUCH_HOLD_NOISE,new byte[]{1,1,0}));amboff.setOnClickListener(v->send(TOUCH_HOLD_NOISE,new byte[]{0,1,1}));anoff.setOnClickListener(v->send(TOUCH_HOLD_NOISE,new byte[]{1,0,1}));add(th,cycle);add(th,amboff);add(th,anoff);root.addView(th);
+
+        root.addView(t("CONVERSATION DETECTION",18));
+        LinearLayout cv=row();Button cvOn=b("AÇ"),cvOff=b("KAPAT");cvOn.setOnClickListener(v->send(DETECT_CONV,new byte[]{1}));cvOff.setOnClickListener(v->send(DETECT_CONV,new byte[]{0}));add(cv,cvOn);add(cv,cvOff);root.addView(cv);
+        LinearLayout ct=row();String[] secs={"5 s","10 s","15 s"};for(int i=0;i<3;i++){final int n=i;Button x=b(secs[i]);x.setOnClickListener(v->send(DETECT_CONV_DURATION,new byte[]{(byte)n}));add(ct,x);}root.addView(ct);
+
+        root.addView(t("SPATIAL AUDIO",18));
+        LinearLayout sp=row();Button spOn=b("SPATIAL AÇ"),attach=b("ATTACH"),keep=b("KEEPALIVE"),detach=b("DETACH"),spOff=b("SPATIAL KAPAT");
+        spOn.setOnClickListener(v->send(SPATIAL_AUDIO,new byte[]{1}));attach.setOnClickListener(v->send(SPATIAL_CONTROL,new byte[]{0}));keep.setOnClickListener(v->send(SPATIAL_CONTROL,new byte[]{4}));detach.setOnClickListener(v->send(SPATIAL_CONTROL,new byte[]{1}));spOff.setOnClickListener(v->send(SPATIAL_AUDIO,new byte[]{0}));add(sp,spOn);add(sp,attach);add(sp,keep);add(sp,detach);add(sp,spOff);root.addView(sp);
+
+        root.addView(t("FIND MY EARBUDS",18));LinearLayout fm=row();Button fs=b("BAŞLAT"),fe=b("DURDUR");fs.setOnClickListener(v->send(FIND_START,new byte[0]));fe.setOnClickListener(v->send(FIND_STOP,new byte[0]));add(fm,fs);add(fm,fe);root.addView(fm);
+
+        root.addView(t("DEVICE / DIAGNOSTICS",18));LinearLayout di=row();Button info=b("MANAGER INFO"),fit=b("FIT TEST"),self=b("SELF TEST");info.setOnClickListener(v->send(MANAGER_INFO,new byte[0]));fit.setOnClickListener(v->send(FIT,new byte[]{1}));self.setOnClickListener(v->send(SELF_TEST,new byte[0]));add(di,info);add(di,fit);add(di,self);root.addView(di);
+        LinearLayout misc=row();Button time=b("SYNC TIME"),capture=b("CAPTURE MARK");time.setOnClickListener(v->send(UPDATE_TIME,timePayload()));capture.setOnClickListener(v->append("CAPTURE_MARK"));add(misc,time);add(misc,capture);root.addView(misc);
+
+        root.addView(t("ADVANCED / FIRMWARE",18));root.addView(t("GalaxyBudsClient has ACT/FOTA/debug/hidden commands. These are catalogued but not blindly transmitted on R177. Firmware update and hidden test commands require a verified device-specific implementation before enabling TX.",12));
+        Button catalog=b("PROTOCOL CATALOG");catalog.setOnClickListener(v->showCatalog());root.addView(catalog);
         logView=t("TX/RX log\n",11);logView.setTextIsSelectable(true);ScrollView sv=new ScrollView(this);sv.addView(logView);root.addView(sv,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
     }
+
+    private void showCatalog(){
+        final String[] ids={"15 HOT_COMMAND_MANAGE","16 SET_MODE_CHANGE","17 GET_MODE","32 SET_DEBUG_MODE","65 METERING_REPORT","66 ACK","75 ACT_TEST_CMD","96 STATUS_UPDATED","97 EXTENDED_STATUS_UPDATED","98 CONNECTION_UPDATED","99 VERSION_INFO","111 SET_ANC_WITH_ONE_EARBUD","120 NOISE_CONTROLS","121 TOUCH_AND_HOLD_NOISE","122 SET_DETECT_CONVERSATIONS","123 CONVERSATION_DURATION","124 SET_SPATIAL_AUDIO","125 SPEAK_SEAMLESSLY","126 AMPLIFY_AMBIENT","128 SET_AMBIENT_MODE","130 CUSTOMIZE_AMBIENT","131 NOISE_REDUCTION_LEVEL","132 AMBIENT_VOLUME","134 EQUALIZER","135 GAME_MODE","136 MANAGER_INFO","139 SET_SIDETONE","144 LOCK_TOUCHPAD","146 SET_TOUCHPAD_OPTION","147 SET_TOUCHPAD_OTHER_OPTION","150 EXTRA_HIGH_AMBIENT","151 SET_VOICE_WAKE_UP","152 SET_NOISE_REDUCTION","153 VOICE_WAKE_UP_LANGUAGE","157 FIT_TEST","158 FIT_RESULT","160 FIND_MY_START","161 FIND_MY_STOP","162 MUTE_EARBUD","167 UPDATE_TIME","171 SELF_TEST","172 SET_FMM_CONFIG","173 GET_FMM_CONFIG","175 SET_SEAMLESS_CONNECTION","176-190 FOTA","194 SPATIAL_AUDIO_DATA","195 SPATIAL_AUDIO_CONTROL","197 ADAPTIVE_VOLUME","198-201 NECK_POSTURE","202 OVERHEAT","204 HEARING_TEST_DATA","205 CRADLE_SERIAL","206 SOC_BATTERY_CYCLE","217-219 ADAPTIVE_EQ","233 SD_SPEAKER_RES","234 SD_MIC_RES","241 DEBUG_ERROR_CODE","242 DEBUG_EVENT","254 SD_TOUCH_RES","255 SET_TOUCH_TYPE"};
+        ScrollView s=new ScrollView(this);TextView v=t("GALAXYBUDSCLIENT MESSAGE CATALOG\n\n"+String.join("\n",ids),13);s.addView(v);new AlertDialog.Builder(this).setTitle("Protocol Catalog").setView(s).setPositiveButton("KAPAT",null).show();
+    }
+
     private void loadBonded(){if(adapter==null)return;if(android.os.Build.VERSION.SDK_INT>=31&&checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED)return;devices.clear();ArrayList<String> names=new ArrayList<>();for(BluetoothDevice d:adapter.getBondedDevices()){devices.add(d);names.add(safeName(d)+"  "+d.getAddress());}spinner.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,names));if(names.isEmpty())toast("Buds2'yi Android Bluetooth ayarlarından eşleştir.");}
     private String safeName(BluetoothDevice d){try{return d.getName()==null?"Bluetooth device":d.getName();}catch(Exception e){return"Bluetooth device";}}
-    private void connect(){if(devices.isEmpty()){toast("Eşleşmiş cihaz yok");return;}selected=devices.get(spinner.getSelectedItemPosition());io.execute(()->{try{BluetoothSocket s=selected.createRfcommSocketToServiceRecord(SPP);adapter.cancelDiscovery();s.connect();socket=s;out=s.getOutputStream();connected=true;runOnUiThread(()->status.setText("● RFCOMM BAĞLI — "+safeName(selected)));append("CONNECTED "+selected.getAddress());readLoop(s);}catch(Exception e){connected=false;runOnUiThread(()->status.setText("● Bağlantı hatası: "+e.getClass().getSimpleName()));append("CONNECT_ERROR "+e);}});}
-    private void readLoop(BluetoothSocket s){try{InputStream in=s.getInputStream();byte[] buf=new byte[1024];while(connected){int n=in.read(buf);if(n<0)break;append("RX "+hex(Arrays.copyOf(buf,n)));}}catch(Exception e){append("READ_END "+e);}finally{connected=false;runOnUiThread(()->status.setText("● Bağlantı kesildi"));}}
+    private void connect(){if(devices.isEmpty()){toast("Eşleşmiş cihaz yok");return;}selected=devices.get(spinner.getSelectedItemPosition());io.execute(()->{try{BluetoothSocket s=selected.createRfcommSocketToServiceRecord(SPP_NEW);adapter.cancelDiscovery();s.connect();socket=s;out=s.getOutputStream();connected=true;runOnUiThread(()->status.setText("● SPP YENİ BAĞLI — "+safeName(selected)));append("CONNECTED "+selected.getAddress()+" UUID="+SPP_NEW);readLoop(s);}catch(Exception e){connected=false;runOnUiThread(()->status.setText("● Bağlantı hatası: "+e.getClass().getSimpleName()));append("CONNECT_ERROR "+e);}});}
+    private void readLoop(BluetoothSocket s){try{InputStream in=s.getInputStream();byte[] buf=new byte[2048];while(connected){int n=in.read(buf);if(n<0)break;append("RX "+hex(Arrays.copyOf(buf,n)));}}catch(Exception e){append("READ_END "+e);}finally{connected=false;runOnUiThread(()->status.setText("● Bağlantı kesildi"));}}
     private void disconnect(){connected=false;try{if(socket!=null)socket.close();}catch(Exception ignored){}append("DISCONNECTED");}
-    private void send(int id,byte[] payload){if(!connected||out==null){toast("Önce Buds2'ye bağlan");return;}byte[] frame=frame(id,payload);io.execute(()->{try{out.write(frame);out.flush();append("TX "+hex(frame));}catch(Exception e){append("TX_ERROR "+e);}});}
+    private void send(int id,byte[] payload){if(!connected||out==null){toast("Önce Buds2'ye bağlan");return;}byte[] frame=frame(id,payload);io.execute(()->{try{out.write(frame);out.flush();append(String.format(Locale.US,"TX id=%d payload=%s FRAME=%s",id,hex(payload),hex(frame)));}catch(Exception e){append("TX_ERROR "+e);}});}
     private byte[] frame(int id,byte[] payload){int declared=1+payload.length+2;byte[] b=new byte[declared+4];b[0]=(byte)0xFD;b[1]=(byte)declared;b[2]=(byte)(declared>>8);b[3]=(byte)id;System.arraycopy(payload,0,b,4,payload.length);int crc=crc16(b,3,declared-2);int p=b.length-3;b[p]=(byte)crc;b[p+1]=(byte)(crc>>8);b[p+2]=(byte)0xDD;return b;}
     private int crc16(byte[] b,int off,int len){int c=0;for(int i=off;i<off+len;i++){c^=(b[i]&255)<<8;for(int j=0;j<8;j++)c=((c&0x8000)!=0)?((c<<1)^0x1021)&0xffff:(c<<1)&0xffff;}return c;}
     private byte[] timePayload(){long now=System.currentTimeMillis();int tz=TimeZone.getDefault().getOffset(now);return ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN).putLong(now).putInt(tz).array();}
