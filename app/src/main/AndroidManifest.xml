@@ -14,6 +14,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".Ayf1ControlsActivity" android:exported="false" />
+        <activity android:name=".Ayf1DiagnosticsActivity" android:exported="false" />
         <activity android:name=".BudsManagerActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="false" />
     </application>
