@@ -47,7 +47,7 @@ public final class Ayf1DiagnosticsActivity extends Activity {
     private boolean crc(byte[] f){if(f.length<7)return false;int q=f.length-3;return ((f[q]&255)|((f[q+1]&255)<<8))==crc16(f,1,q-1);}
     private int crc16(byte[] b,int o,int n){int c=0xFFFF;for(int i=o;i<o+n;i++){c^=(b[i]&255)<<8;for(int k=0;k<8;k++)c=(c&0x8000)!=0?((c<<1)^0x1021)&65535:(c<<1)&65535;}return c;}
     private String hex(byte[] b){StringBuilder s=new StringBuilder();for(byte x:b){if(s.length()>0)s.append(' ');s.append(String.format(Locale.US,"%02X",x&255));}return s.toString();}
-    private void append(String s){runOnUiThread(()->{log.append(s);log.append('\n');});}
+    private void append(String s){runOnUiThread(()->{log.append(s);log.append("\n");});}
     private void toast(String s){runOnUiThread(()->Toast.makeText(this,s,Toast.LENGTH_SHORT).show());}
     @Override protected void onDestroy(){connected=false;try{if(socket!=null)socket.close();}catch(Exception ignored){}io.shutdownNow();super.onDestroy();}
 }
