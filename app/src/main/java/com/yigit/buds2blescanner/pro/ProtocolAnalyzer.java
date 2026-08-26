@@ -6,8 +6,8 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Streaming SM-R177 analyzer. It deliberately keeps unknown fields raw instead
- * of guessing their meaning. It can split partial reads and multiple frames.
+ * Streaming SM-R177 analyzer. It keeps unknown fields raw, splits partial reads
+ * and multiple frames, and does not assume the 16-bit header is a frame length.
  */
 public final class ProtocolAnalyzer {
     public enum Direction { RX, TX }
@@ -54,25 +54,35 @@ public final class ProtocolAnalyzer {
             if (start > 0) buffer.subList(0, start).clear();
             if (buffer.size() < 7) break;
 
-            int header = ((buffer.get(1) & 0xFF) << 8) | (buffer.get(2) & 0xFF);
-            // The SM-R177 capture shows a 14-bit length plus a 2-bit rolling sequence.
-            int length = header & 0x3FFF;
-            int total = length + 5; // FD + 2-byte header + message/payload + CRC2 + DD
-            if (length < 2 || total < 7 || total > 8192) {
-                buffer.remove(0);
-                continue;
+            // Do not derive frame length from the two-byte header: capture data
+            // contains values such as 08 2A/C8 2A while the actual frame is much
+            // shorter. Find the earliest DD that produces a valid CRC instead.
+            int end = findValidEnd(6, Math.min(buffer.size() - 1, 8191));
+            if (end < 0) {
+                // If there is no complete candidate yet, keep the buffer. If it
+                // has grown too large without a valid frame, resync at next FD.
+                if (buffer.size() > 8192) buffer.remove(0);
+                break;
             }
-            if (buffer.size() < total) break;
-            if ((buffer.get(total - 1) & 0xFF) != 0xDD) {
-                buffer.remove(0);
-                continue;
-            }
+
+            int total = end + 1;
             byte[] frame = new byte[total];
             for (int i=0; i<total; i++) frame[i] = buffer.get(i);
             buffer.subList(0, total).clear();
             result.add(new FrameEvent(timestampMs, direction, frame));
         }
         return result;
+    }
+
+    private int findValidEnd(int from, int to) {
+        for (int i = Math.max(from, 6); i <= to; i++) {
+            if ((buffer.get(i) & 0xFF) != 0xDD) continue;
+            int length = i + 1;
+            byte[] candidate = new byte[length];
+            for (int j=0; j<length; j++) candidate[j] = buffer.get(j);
+            if (Buds2Protocol.verifyCrcLe(candidate)) return i;
+        }
+        return -1;
     }
 
     public synchronized void reset() { buffer.clear(); }
