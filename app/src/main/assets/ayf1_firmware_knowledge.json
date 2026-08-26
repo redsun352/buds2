@@ -1,0 +1,31 @@
+{
+  "model": "SM-R177",
+  "product": "Galaxy Buds2",
+  "firmware": "R177XXU0AYF1",
+  "build_date": "Jun 10 2025 04:31:53",
+  "read_only": true,
+  "features": {
+    "ANC": ["TwaAudio_ANCSoundOn", "TwaAudio_ANCSoundOff", "TwaAudioProd_ANC", "TwaAudioProd_ANCSetFBGain", "TwaAudioProd_ANCSetFFGain", "TwaAudioProd_ANCLeakdetect"],
+    "AMBIENT": ["TwaAudio_AmbientSoundOn", "TwaAudio_AmbientSoundOff", "TwaAudio_AmbientSoundSetLevel", "TwaAudio_AmbientSoundSetTone"],
+    "EQ": ["TwaAudio_EQSet", "TWU_MSG_ID_SET_EQUALIZER_MODE"],
+    "TOUCH": ["TwfSession_SetTouchControl", "TwfSession_GetTouchControl", "TwfSession_UpdateTouchControl", "TwfSession_SetTouchLockTimer"],
+    "CONVERSATION_DETECTION": ["TWU_MSG_ID_SET_DETECT_CONVERSATION", "TWU_MSG_ID_SET_DETECT_CONVERSATION_DURATION"],
+    "SIDETONE": ["TWU_MSG_ID_SET_SIDETONE"],
+    "ONE_EARBUD_ANC": ["TWU_MSG_ID_SET_ANC_WITH_ONE_EARBUD"],
+    "CUSTOM_AMBIENT": ["TWU_MSG_ID_SET_CUSTOM_AMBIENT"],
+    "SPATIAL_AUDIO": ["TWU_MSG_ID_SET_SPATIAL_AUDIO_SYNC", "TWU_MSG_ID_AUDIO_SPATIAL_DATA", "TWU_MSG_ID_AUDIO_SPATIAL_CONTROL"],
+    "FIND_MY_EARBUDS": ["TwfFindMyEarbuds_Start", "TwfFindMyEarbuds_Stop", "TwfFindMyEarbuds_SetVolume", "TWU_MSG_ID_FIND_MY_EARBUDS_START", "TWU_MSG_ID_FIND_MY_EARBUDS_STOP"],
+    "FIT_TEST": ["TWU_MSG_ID_EARBUDS_FIT_TEST", "TWU_MSG_ID_SESSION_FIT_TEST_FINISHED"],
+    "SELF_TEST": ["TWU_MSG_ID_SELF_TEST"],
+    "ACT_TEST": ["TWU_MSG_ID_ACT_TEST_OPENNING", "TWU_MSG_ID_ACT_TEST_CMD", "TWU_MSG_ID_ACT_TEST_SEND_DATA", "TWU_MSG_ID_ACT_TEST_CLOSING"],
+    "MIC_LOOPBACK": ["TwaAudioProd_LoopbackCheckMicVP", "TwaAudioProd_LoopbackCheckMicFF", "TwaAudioProd_LoopbackCheckMicFB"],
+    "ANC_LEAK_TEST": ["TwaAudioProd_ANCLeakdetect", "TwaAudioUser_ANCLeakdetect"],
+    "GYRO": ["TwfAudioSpatial_ReadFactoryGyroBias", "TwfAudioSpatial_ReadInUseGyroBias", "TwfAudioSpatial_ReadAnyGyroBias"],
+    "BATTERY_STATUS": ["TWU_MSG_ID_STATUS_UPDATED", "TWU_MSG_ID_SESSION_SEND_ALL_INFO", "TWU_MSG_ID_SESSION_SEND_VOLUME_INFO"]
+  },
+  "message_names": [
+    "TWU_MSG_ID_SET_EQUALIZER_MODE", "TWU_MSG_ID_SET_AMBIENT_MODE", "TWU_MSG_ID_SET_NOISE_CONTROLS", "TWU_MSG_ID_SET_TOUCHPAD_OPTION", "TWU_MSG_ID_SET_TOUCH_CONFIG", "TWU_MSG_ID_AMBIENT_VOLUME", "TWU_MSG_ID_ACTIVE_NOISE_CANCELING_LEVEL", "TWU_MSG_ID_SET_CUSTOM_AMBIENT", "TWU_MSG_ID_SET_SIDETONE", "TWU_MSG_ID_SET_ANC_WITH_ONE_EARBUD", "TWU_MSG_ID_SET_DETECT_CONVERSATION", "TWU_MSG_ID_SET_DETECT_CONVERSATION_DURATION", "TWU_MSG_ID_SET_SPEAK_SEAMLESSLY", "TWU_MSG_ID_SET_SPATIAL_AUDIO_SYNC", "TWU_MSG_ID_SELF_TEST", "TWU_MSG_ID_EARBUDS_FIT_TEST", "TWU_MSG_ID_FIND_MY_EARBUDS_START", "TWU_MSG_ID_FIND_MY_EARBUDS_STOP"
+  ],
+  "capture_types_observed": ["0x41", "0x60", "0x61", "0x63", "0xF5", "0xF6"],
+  "send_policy": "Do not construct or transmit a command solely from a firmware symbol. Mark a command SAFE_TO_SEND only after wire-format verification from GalaxyBudsClient source or a real TX/RX capture."
+}
