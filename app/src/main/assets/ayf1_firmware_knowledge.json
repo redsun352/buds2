@@ -4,28 +4,46 @@
   "firmware": "R177XXU0AYF1",
   "build_date": "Jun 10 2025 04:31:53",
   "read_only": true,
+  "flash": {
+    "base": "0x28000000",
+    "size": "0x800000",
+    "ota_code_offset": "0x18000",
+    "ota_remap_offset": "0x320000",
+    "image_crc32": "0xF589A6CB"
+  },
   "features": {
-    "ANC": ["TwaAudio_ANCSoundOn", "TwaAudio_ANCSoundOff", "TwaAudioProd_ANC", "TwaAudioProd_ANCSetFBGain", "TwaAudioProd_ANCSetFFGain", "TwaAudioProd_ANCLeakdetect"],
-    "AMBIENT": ["TwaAudio_AmbientSoundOn", "TwaAudio_AmbientSoundOff", "TwaAudio_AmbientSoundSetLevel", "TwaAudio_AmbientSoundSetTone"],
+    "ANC": ["TwaAudio_ANCSoundOn", "TwaAudio_ANCSoundOff", "TwaAudioProd_ANC", "TwaAudioProd_ANCSetFBGain", "TwaAudioProd_ANCSetFFGain", "TwaAudioProd_ANCSetBestFBGain", "TwaAudioProd_ANCSetBestFFGain", "TwaAudioProd_ANCGetBestFFGain", "TwaAudioProd_ANCGetBestFBGain", "TwaAudioProd_ANCLeakdetect"],
+    "AMBIENT": ["TwaAudio_AmbientSoundOn", "TwaAudio_AmbientSoundOff", "TwaAudio_AmbientSoundSetLevel", "TwaAudio_AmbientSoundControlLevel", "TwaAudio_AmbientSoundControlTone", "TwaAudio_AmbientSoundSetTone"],
     "EQ": ["TwaAudio_EQSet", "TWU_MSG_ID_SET_EQUALIZER_MODE"],
-    "TOUCH": ["TwfSession_SetTouchControl", "TwfSession_GetTouchControl", "TwfSession_UpdateTouchControl", "TwfSession_SetTouchLockTimer"],
-    "CONVERSATION_DETECTION": ["TWU_MSG_ID_SET_DETECT_CONVERSATION", "TWU_MSG_ID_SET_DETECT_CONVERSATION_DURATION"],
+    "TOUCH": ["TwfSession_TouchFunction", "TwfSession_TouchFunctionRepeat", "TwfSession_TouchFunctionNoiseControl", "TwfSession_SetTouchControl", "TwfSession_GetTouchControl", "TwfSession_UpdateTouchControl", "TwfSession_SetTouchLockTimer"],
+    "CONVERSATION_DETECTION": ["TWU_MSG_ID_SET_DETECT_CONVERSATION", "TWU_MSG_ID_SET_DETECT_CONVERSATION_DURATION", "TWU_MSG_ID_SET_SPEAK_SEAMLESSLY"],
     "SIDETONE": ["TWU_MSG_ID_SET_SIDETONE"],
     "ONE_EARBUD_ANC": ["TWU_MSG_ID_SET_ANC_WITH_ONE_EARBUD"],
     "CUSTOM_AMBIENT": ["TWU_MSG_ID_SET_CUSTOM_AMBIENT"],
-    "SPATIAL_AUDIO": ["TWU_MSG_ID_SET_SPATIAL_AUDIO_SYNC", "TWU_MSG_ID_AUDIO_SPATIAL_DATA", "TWU_MSG_ID_AUDIO_SPATIAL_CONTROL"],
-    "FIND_MY_EARBUDS": ["TwfFindMyEarbuds_Start", "TwfFindMyEarbuds_Stop", "TwfFindMyEarbuds_SetVolume", "TWU_MSG_ID_FIND_MY_EARBUDS_START", "TWU_MSG_ID_FIND_MY_EARBUDS_STOP"],
+    "SPATIAL_AUDIO": ["TWU_MSG_ID_SET_SPATIAL_AUDIO_SYNC", "TWU_MSG_ID_AUDIO_SPATIAL_DATA", "TWU_MSG_ID_AUDIO_SPATIAL_CONTROL", "TwfAudioSpatial_ReadFactoryGyroBias", "TwfAudioSpatial_ReadInUseGyroBias", "TwfAudioSpatial_ReadAnyGyroBias"],
+    "FIND_MY_EARBUDS": ["TwfFindMyEarbuds_Start", "TwfFindMyEarbuds_Stop", "TwfFindMyEarbuds_Mute", "TwfFindMyEarbuds_Sync", "TwfFindMyEarbuds_SetVolume", "TwfFindMyEarbuds_ResetVolume", "TwfFindMyEarbuds_Place", "TWU_MSG_ID_FIND_MY_EARBUDS_START", "TWU_MSG_ID_FIND_MY_EARBUDS_STOP", "TWU_MSG_ID_FIND_MY_EARBUDS_VOLUME_CONTROL"],
     "FIT_TEST": ["TWU_MSG_ID_EARBUDS_FIT_TEST", "TWU_MSG_ID_SESSION_FIT_TEST_FINISHED"],
     "SELF_TEST": ["TWU_MSG_ID_SELF_TEST"],
-    "ACT_TEST": ["TWU_MSG_ID_ACT_TEST_OPENNING", "TWU_MSG_ID_ACT_TEST_CMD", "TWU_MSG_ID_ACT_TEST_SEND_DATA", "TWU_MSG_ID_ACT_TEST_CLOSING"],
-    "MIC_LOOPBACK": ["TwaAudioProd_LoopbackCheckMicVP", "TwaAudioProd_LoopbackCheckMicFF", "TwaAudioProd_LoopbackCheckMicFB"],
+    "ACT_TEST": ["TWU_MSG_ID_ACT_TEST_OPENNING", "TWU_MSG_ID_ACT_TEST_CMD", "TWU_MSG_ID_ACT_TEST_SEND_DATA", "TWU_MSG_ID_ACT_TEST_CLOSING", "TWU_MSG_ID_ACT_TEST_CHARGING", "TWU_MSG_ID_ACT_TEST_HALL_IC", "TWU_MSG_ID_ACT_TEST_FACTORY_MODE", "TWU_MSG_ID_ACT_TEST_FACTORY_CMD"],
+    "MIC_LOOPBACK": ["TwaAudioProd_LoopbackCheckMicVP", "TwaAudioProd_LoopbackCheckMicFF", "TwaAudioProd_LoopbackCheckMicFB", "TwaAudioProd_LoopbackCheckANCOneshot", "TwaAudioProd_LoopbackCheckAmbientOneshot"],
     "ANC_LEAK_TEST": ["TwaAudioProd_ANCLeakdetect", "TwaAudioUser_ANCLeakdetect"],
-    "GYRO": ["TwfAudioSpatial_ReadFactoryGyroBias", "TwfAudioSpatial_ReadInUseGyroBias", "TwfAudioSpatial_ReadAnyGyroBias"],
-    "BATTERY_STATUS": ["TWU_MSG_ID_STATUS_UPDATED", "TWU_MSG_ID_SESSION_SEND_ALL_INFO", "TWU_MSG_ID_SESSION_SEND_VOLUME_INFO"]
+    "GYRO": ["TwfAudioSpatial_ReadFactoryGyroBias", "TwfAudioSpatial_ReadInUseGyroBias", "TwfAudioSpatial_ReadAnyGyroBias", "TwfAudioSpatial_InjectGyroBias"],
+    "BATTERY_STATUS": ["TWU_MSG_ID_STATUS_UPDATED", "TWU_MSG_ID_SESSION_SEND_ALL_INFO", "TWU_MSG_ID_SESSION_SEND_VOLUME_INFO"],
+    "NOISE_CONTROLS": ["TWU_MSG_ID_SET_NOISE_CONTROLS", "TWU_MSG_ID_ACTIVE_NOISE_CANCELING_LEVEL", "TWU_MSG_ID_AMBIENT_VOLUME"],
+    "TOUCH_CONFIGURATION": ["TWU_MSG_ID_SET_TOUCHPAD_OPTION", "TWU_MSG_ID_SET_TOUCH_CONFIG", "TWU_MSG_ID_SET_TOUCH_AND_HOLD_NOISE_CONTROL"],
+    "CALL_AND_WEARING": ["TWU_MSG_ID_SET_CALLPATH_CTRL_BY_WEARING"],
+    "DIAGNOSTIC_MESSAGES": ["TWU_MSG_ID_ACT_TEST_OPENNING", "TWU_MSG_ID_ACT_TEST_CLOSING", "TWU_MSG_ID_ACT_TEST_SEND_DATA", "TWU_MSG_ID_ACT_TEST_FACTORY_MODE"]
   },
   "message_names": [
-    "TWU_MSG_ID_SET_EQUALIZER_MODE", "TWU_MSG_ID_SET_AMBIENT_MODE", "TWU_MSG_ID_SET_NOISE_CONTROLS", "TWU_MSG_ID_SET_TOUCHPAD_OPTION", "TWU_MSG_ID_SET_TOUCH_CONFIG", "TWU_MSG_ID_AMBIENT_VOLUME", "TWU_MSG_ID_ACTIVE_NOISE_CANCELING_LEVEL", "TWU_MSG_ID_SET_CUSTOM_AMBIENT", "TWU_MSG_ID_SET_SIDETONE", "TWU_MSG_ID_SET_ANC_WITH_ONE_EARBUD", "TWU_MSG_ID_SET_DETECT_CONVERSATION", "TWU_MSG_ID_SET_DETECT_CONVERSATION_DURATION", "TWU_MSG_ID_SET_SPEAK_SEAMLESSLY", "TWU_MSG_ID_SET_SPATIAL_AUDIO_SYNC", "TWU_MSG_ID_SELF_TEST", "TWU_MSG_ID_EARBUDS_FIT_TEST", "TWU_MSG_ID_FIND_MY_EARBUDS_START", "TWU_MSG_ID_FIND_MY_EARBUDS_STOP"
+    "TWU_MSG_ID_SET_EQUALIZER_MODE", "TWU_MSG_ID_SET_AMBIENT_MODE", "TWU_MSG_ID_SET_NOISE_CONTROLS", "TWU_MSG_ID_SET_TOUCHPAD_OPTION", "TWU_MSG_ID_SET_TOUCH_CONFIG", "TWU_MSG_ID_AMBIENT_VOLUME", "TWU_MSG_ID_ACTIVE_NOISE_CANCELING_LEVEL", "TWU_MSG_ID_SET_CUSTOM_AMBIENT", "TWU_MSG_ID_SET_SIDETONE", "TWU_MSG_ID_SET_ANC_WITH_ONE_EARBUD", "TWU_MSG_ID_SET_DETECT_CONVERSATION", "TWU_MSG_ID_SET_DETECT_CONVERSATION_DURATION", "TWU_MSG_ID_SET_SPEAK_SEAMLESSLY", "TWU_MSG_ID_SET_TOUCH_AND_HOLD_NOISE_CONTROL", "TWU_MSG_ID_SET_CALLPATH_CTRL_BY_WEARING", "TWU_MSG_ID_SET_SPATIAL_AUDIO_SYNC", "TWU_MSG_ID_AUDIO_SPATIAL_DATA", "TWU_MSG_ID_AUDIO_SPATIAL_CONTROL", "TWU_MSG_ID_SELF_TEST", "TWU_MSG_ID_EARBUDS_FIT_TEST", "TWU_MSG_ID_SESSION_FIT_TEST_FINISHED", "TWU_MSG_ID_FIND_MY_EARBUDS_START", "TWU_MSG_ID_FIND_MY_EARBUDS_STOP", "TWU_MSG_ID_FIND_MY_EARBUDS_VOLUME_CONTROL", "TWU_MSG_ID_SESSION_SEND_ALL_INFO", "TWU_MSG_ID_SESSION_SEND_VOLUME_INFO"
   ],
   "capture_types_observed": ["0x41", "0x60", "0x61", "0x63", "0xF5", "0xF6"],
+  "ui_sections": ["Device", "Sound Studio", "Noise Control", "Equalizer", "Ambient", "Touch", "Conversation", "Spatial Audio", "Find My Earbuds", "Fit Test", "Diagnostics", "Protocol Lab", "Capture Lab", "Firmware", "Settings"],
+  "verification_policy": {
+    "FIRMWARE_PRESENT": "Symbol or message name exists in the AYF1 firmware evidence.",
+    "PROTOCOL_VERIFIED": "Wire format is supported by GalaxyBudsClient protocol implementation.",
+    "CAPTURE_VERIFIED": "The behavior is correlated with a real RX/TX capture.",
+    "SAFE_TO_SEND": "Only PROTOCOL_VERIFIED or CAPTURE_VERIFIED commands may be transmitted."
+  },
   "send_policy": "Do not construct or transmit a command solely from a firmware symbol. Mark a command SAFE_TO_SEND only after wire-format verification from GalaxyBudsClient source or a real TX/RX capture."
 }
