@@ -13,7 +13,7 @@ import java.util.concurrent.*;
 
 /** R177 diagnostics using the Buds2 SPP framing observed in AYF1 captures. */
 public final class Ayf1DiagnosticsActivity extends Activity {
-    private static final UUID SPP=UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    private static final UUID SPP=UUID.fromString("2e73a4ad-332d-41fc-90e2-16bef06523f2");
     private static final int FIT=157,FIT_RESULT=158,SELF=171,SPATIAL=194;
     private static final int SOM_FD=0xFD,EOM_DD=0xDD,SOM_FE=0xFE,EOM_EE=0xEE;
     private BluetoothSocket socket; private OutputStream out; private volatile boolean connected;
@@ -83,7 +83,8 @@ public final class Ayf1DiagnosticsActivity extends Activity {
         f[0]=(byte)som;f[1]=(byte)header;f[2]=(byte)(header>>8);f[3]=(byte)id;System.arraycopy(p,0,f,4,p.length);
         int c=crc16(id,p);int q=4+p.length;f[q]=(byte)c;f[q+1]=(byte)(c>>8);f[q+2]=(byte)eom;return f;
     }
-    private int crc16(int id,byte[] p){int c=0xFFFF;c=crcByte(c,id);for(byte x:p)c=crcByte(c,x&255);return c;}
+    /** GalaxyBudsClient Crc16.crc16_ccitt uses initial CRC 0 and polynomial 0x1021. */
+    private int crc16(int id,byte[] p){int c=0;c=crcByte(c,id);for(byte x:p)c=crcByte(c,x&255);return c;}
     private int crcByte(int c,int v){c^=(v&255)<<8;for(int k=0;k<8;k++)c=(c&0x8000)!=0?((c<<1)^0x1021)&65535:(c<<1)&65535;return c;}
     private String hex(byte[] b){StringBuilder s=new StringBuilder();for(byte x:b){if(s.length()>0)s.append(' ');s.append(String.format(Locale.US,"%02X",x&255));}return s.toString();}
     private void append(String s){runOnUiThread(()->{log.append(s);log.append("\n");});}
