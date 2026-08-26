@@ -2,6 +2,7 @@ package com.yigit.buds2blescanner;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.bluetooth.*;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
@@ -64,16 +65,14 @@ public class Ayf1ControlsActivity extends Activity {
 
         root.addView(t("TOUCH",18));
         LinearLayout tl=row();Button lock=b("KİLİTLE"),unlock=b("AÇ");lock.setOnClickListener(v->send(LOCK_TOUCHPAD,new byte[]{1}));unlock.setOnClickListener(v->send(LOCK_TOUCHPAD,new byte[]{0}));add(tl,lock);add(tl,unlock);root.addView(tl);
-        LinearLayout th=row();Button cycle=b("ANC↔AMBIENT"),amboff=b("AMBIENT↔OFF"),anoff=b("ANC↔OFF");
-        cycle.setOnClickListener(v->send(TOUCH_HOLD_NOISE,new byte[]{1,1,0}));amboff.setOnClickListener(v->send(TOUCH_HOLD_NOISE,new byte[]{0,1,1}));anoff.setOnClickListener(v->send(TOUCH_HOLD_NOISE,new byte[]{1,0,1}));add(th,cycle);add(th,amboff);add(th,anoff);root.addView(th);
+        LinearLayout th=row();Button cycle=b("ANC↔AMBIENT"),amboff=b("AMBIENT↔OFF"),anoff=b("ANC↔OFF");cycle.setOnClickListener(v->send(TOUCH_HOLD_NOISE,new byte[]{1,1,0}));amboff.setOnClickListener(v->send(TOUCH_HOLD_NOISE,new byte[]{0,1,1}));anoff.setOnClickListener(v->send(TOUCH_HOLD_NOISE,new byte[]{1,0,1}));add(th,cycle);add(th,amboff);add(th,anoff);root.addView(th);
 
         root.addView(t("CONVERSATION DETECTION",18));
         LinearLayout cv=row();Button cvOn=b("AÇ"),cvOff=b("KAPAT");cvOn.setOnClickListener(v->send(DETECT_CONV,new byte[]{1}));cvOff.setOnClickListener(v->send(DETECT_CONV,new byte[]{0}));add(cv,cvOn);add(cv,cvOff);root.addView(cv);
         LinearLayout ct=row();String[] secs={"5 s","10 s","15 s"};for(int i=0;i<3;i++){final int n=i;Button x=b(secs[i]);x.setOnClickListener(v->send(DETECT_CONV_DURATION,new byte[]{(byte)n}));add(ct,x);}root.addView(ct);
 
         root.addView(t("SPATIAL AUDIO",18));
-        LinearLayout sp=row();Button spOn=b("SPATIAL AÇ"),attach=b("ATTACH"),keep=b("KEEPALIVE"),detach=b("DETACH"),spOff=b("SPATIAL KAPAT");
-        spOn.setOnClickListener(v->send(SPATIAL_AUDIO,new byte[]{1}));attach.setOnClickListener(v->send(SPATIAL_CONTROL,new byte[]{0}));keep.setOnClickListener(v->send(SPATIAL_CONTROL,new byte[]{4}));detach.setOnClickListener(v->send(SPATIAL_CONTROL,new byte[]{1}));spOff.setOnClickListener(v->send(SPATIAL_AUDIO,new byte[]{0}));add(sp,spOn);add(sp,attach);add(sp,keep);add(sp,detach);add(sp,spOff);root.addView(sp);
+        LinearLayout sp=row();Button spOn=b("SPATIAL AÇ"),attach=b("ATTACH"),keep=b("KEEPALIVE"),detach=b("DETACH"),spOff=b("SPATIAL KAPAT");spOn.setOnClickListener(v->send(SPATIAL_AUDIO,new byte[]{1}));attach.setOnClickListener(v->send(SPATIAL_CONTROL,new byte[]{0}));keep.setOnClickListener(v->send(SPATIAL_CONTROL,new byte[]{4}));detach.setOnClickListener(v->send(SPATIAL_CONTROL,new byte[]{1}));spOff.setOnClickListener(v->send(SPATIAL_AUDIO,new byte[]{0}));add(sp,spOn);add(sp,attach);add(sp,keep);add(sp,detach);add(sp,spOff);root.addView(sp);
 
         root.addView(t("FIND MY EARBUDS",18));LinearLayout fm=row();Button fs=b("BAŞLAT"),fe=b("DURDUR");fs.setOnClickListener(v->send(FIND_START,new byte[0]));fe.setOnClickListener(v->send(FIND_STOP,new byte[0]));add(fm,fs);add(fm,fe);root.addView(fm);
 
